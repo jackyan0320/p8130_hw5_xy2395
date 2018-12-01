@@ -9,6 +9,8 @@ output: github_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(faraway) 
+library(patchwork)
+library(funModeling)
 ```
 
 # Dataset Description
@@ -24,15 +26,85 @@ library(faraway)
 *  Frost: mean number of days with minimum temperature below freezing (1931–1960) in capital or large city.
 *  Area: land area in square miles.
 
-# Data manipulation
-
 ```{r}
+# Load the data
 state_df = 
   state.x77 %>% 
   as.tibble() %>% 
   janitor::clean_names() %>% 
   select(life_exp, everything())
   
-#state_df %>% View
+# state_df %>% skimr::skim()
 ```
+
+# Problem 1: Exploratory Data Analysis
+
+## Descriptive Statistics
+
+Descriptive Statistics for all the variables are shown below. All the variables are continuous.
+
+```{r}
+# Build a function to generate descriptive statistics for continuous variables
+summary_continuous = function(variable){
+  data_frame(
+    mean = mean(variable),
+    sd = sd(variable),
+    median = median(variable),
+    maximum = max(variable),
+    minimum = min(variable),
+    IQR = IQR(variable)
+  )
+}
+
+# Generate descriptive statistics
+map(state_df, summary_continuous) %>% 
+  bind_rows() %>% 
+  mutate(variable = names(state_df)) %>% 
+  select(variable, everything()) %>% 
+  knitr::kable(digits = 2, 
+               caption = "Descriptive statistics of continuous variables")
+```
+
+Also show the correlation matrix to check potential correlations. `life_exp` and `murder` are highly correlated. `illiteracy` and `murder` are correlated as well.
+
+```{r}
+cor(state_df) %>% 
+   knitr::kable(digits = 2)
+```
+
+## Plots
+
+First, plot the highly correlated variables.
+
+```{r}
+plot(state_df)
+
+murder_illiteracy_points = 
+state_df %>% 
+  ggplot(aes(x = murder, y = illiteracy))+
+    geom_point()
+murder_lifeexp_points = 
+state_df %>% 
+  ggplot(aes(x = murder, y = life_exp))+
+    geom_point()
+murder_illiteracy_points + murder_lifeexp_points
+```
+
+Then check the normality of the outcome, `life_exp`. Life expectancies are approximately normally distributed among the states. 
+
+```{r}
+state_df %>% 
+  ggplot(aes(x = life_exp)) +
+  geom_histogram(bins = 15)
+```
+
+Also show the distribution of other variables.
+
+```{r}
+state_df %>% select(-life_exp) %>% 
+plot_num()
+```
+
+
+# Problem 2: Model Building Using Automatic Procedures
 
