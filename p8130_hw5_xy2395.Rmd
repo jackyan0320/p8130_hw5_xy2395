@@ -14,6 +14,7 @@ library(funModeling)
 library(broom)
 library(leaps)
 library(modelr)
+library(ggridges)
 ```
 
 # Dataset Description
@@ -292,24 +293,68 @@ cv_df =
   mutate(mse = map2_dbl(model, test, ~mse(model = .x, data = .y))) 
 
 cv_df$mse
-
+summary_continuous(cv_df$mse)
 cv_df %>% 
-  ggplot(aes(y = mse, x = "model")) +
-  geom_violin()
+  ggplot(aes(x = mse, y = "model")) +
+  geom_density_ridges()
 ```
 
 
-b) Bootstrap
+b) Bootstrapping
 
 ```{r}
+set.seed(1)
 fit_final = lm(life_exp ~ population + murder + hs_grad + frost, data = state_df)
 
-state_df = 
+bootstrap_df = 
   state_df %>% 
   add_predictions(fit_final) %>% 
-  mutate(resid = life_exp - pred)
+  mutate(resid = life_exp - pred) 
+
+bootstrap = function(x){
+  bootstrap_df_new =
+    bootstrap_df %>% 
+    mutate(y_new = pred + sample(bootstrap_df$resid, replace = TRUE)) 
+  model = lm(y_new ~ population + murder + hs_grad + frost, data = bootstrap_df_new)
+  mse(model, bootstrap_df_new)
+}
+
+result_df_10 = 
+  map(1:10, bootstrap) %>% 
+  c() %>%  as.numeric %>% as.tibble()
+
+result_df_1000 = 
+  map(1:1000, bootstrap) %>% 
+  c() %>%  as.numeric %>% as.tibble()
+
+summary_continuous(result_df_10$value)
+summary_continuous(result_df_1000$value)
+
+result_df_10 %>% 
+  ggplot(aes(y="density", x = value)) +
+    geom_density_ridges()
+
+result_df_1000 %>% 
+  ggplot(aes(y="density", x = value)) +
+    geom_density_ridges()
+
+
 ```
 
 
+c) Summary
+
+```{r}
+bind_rows(
+  summary_continuous(cv_df$mse),
+  summary_continuous(result_df_10$value),
+  summary_continuous(result_df_1000$value)
+) %>% 
+  mutate(method = c('CV-10fold', 'bootstrap-10X','bootstrap-1000X')) %>% 
+  select(method, everything()) %>% 
+  knitr::kable(digits = 2)
+```
+
+Although the medians of the two methods are similar (0.41 vs 0.42), their means and standard deviations are quite different. For bootstrapping, The means and SD's of MSE are similar in the 10 trials and 1000 trials, showing reliability of this method even with small amount of trials. On the other hand, the standard deviation for the Cross Validation method is significantly higher, which indicates a low stability of this method, especially when k (# of folds) is small. Therefore, I would recommend *bootstrapping* for assessing model performance.
 
 
