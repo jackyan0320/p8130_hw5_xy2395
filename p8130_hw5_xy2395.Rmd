@@ -13,6 +13,7 @@ library(patchwork)
 library(funModeling)
 library(broom)
 library(leaps)
+library(modelr)
 ```
 
 # Dataset Description
@@ -253,15 +254,62 @@ The models chosen from Part 2 and 3 are the same: life_exp ~ population + murder
 
 ```{r}
 final_fit = lm(life_exp ~ population + murder + hs_grad + frost, data = state_df)
-par(mfrow=c(2,2))
+par(mfrow = c(2,2))
 plot(final_fit)
+
+influence.measures(final_fit)
+
 ```
 
 a) Identify any leverage and/or influential points and take appropriate measures.
 
+Based on Cook's distance, Observation 11 is a potentially influential observation. Remove this point and fit the model again.
 
+```{r}
+state_df_no_11 = 
+  state_df %>% 
+  mutate(index = 1:nrow(state_df)) %>% 
+  filter(!index %in% c(11)) 
+
+final_fit_no_11 = lm(life_exp ~ population + murder + hs_grad + frost, data = state_df_no_11)
+plot(final_fit_no_11)
+```
 
 b) Check the model assumptions.
+
+The residuals are spread equally along the fitted values. We can assume that the residuals have mean 0 and equal variance, and are independent of each other. The QQ plot shows a minor deviate from normal distribubtion at the tail, which may be caused by outliers. 
+
+
+# Model Validation
+Using the ‘final’ model chosen in part 4, focus on MSE to test the model predictive ability.
+
+a) Use a 10-fold cross-validation (10 repeats).
+
+```{r}
+cv_df = 
+  crossv_kfold(state_df, 10) %>% 
+  mutate(model = map(train, ~lm(life_exp ~ population + murder + hs_grad + frost, data = .x))) %>% 
+  mutate(mse = map2_dbl(model, test, ~mse(model = .x, data = .y))) 
+
+cv_df$mse
+
+cv_df %>% 
+  ggplot(aes(y = mse, x = "model")) +
+  geom_violin()
+```
+
+
+b) Bootstrap
+
+```{r}
+fit_final = lm(life_exp ~ population + murder + hs_grad + frost, data = state_df)
+
+state_df = 
+  state_df %>% 
+  add_predictions(fit_final) %>% 
+  mutate(resid = life_exp - pred)
+```
+
 
 
 
