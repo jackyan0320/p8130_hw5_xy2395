@@ -11,6 +11,7 @@ library(tidyverse)
 library(faraway) 
 library(patchwork)
 library(funModeling)
+library(broom)
 ```
 
 # Dataset Description
@@ -107,4 +108,116 @@ plot_num()
 
 
 # Problem 2: Model Building Using Automatic Procedures
+
+Fit a model using all the predictors.
+
+```{r}
+fit_all = lm(life_exp ~ ., data = state_df) 
+summary(fit_all)
+```
+
+## Backward Elimination
+
+```{r}
+# no area
+step1 = update(fit_all, . ~ . -area)
+summary(step1)
+
+# no illiteracy
+step2 = update(step1, . ~ . -illiteracy)
+summary(step2)
+
+# no income
+step3 = update(step2, . ~ . -income)
+summary(step3)
+
+# no pupulation
+step4 = update(step3, . ~ . -population)
+summary(step4)
+```
+
+The model we obtained by stepwise elimination is life_exp ~ murder + hs_grad + frost.
+
+## Forward Elimination
+
+```{r}
+### Step 1:  Fit simple linear regressions for all variables,look for the variable with lowest p-value
+variables_list = names(state_df) 
+
+map(variables_list, ~lm(substitute(life_exp ~ i, list(i = as.name(.x))), data = state_df)) %>% 
+  map_df(., tidy) %>% 
+  filter(term != "(Intercept)")
+  
+# Enter first the one with the lowest p-value: murder
+forward1 = lm(life_exp ~ murder, data = state_df)
+tidy(forward1)
+
+### Step 2: Enter the one with the lowest p-value in the rest 
+
+map(.x = variables_list, ~update(forward1, substitute(. ~ . + i, list(i = as.name(.x))))) %>% 
+  map_df(., tidy) %>% 
+  filter(term != "(Intercept)", term != "murder")
+
+# Enter the one with the lowest p-value: hs_grad
+forward2 <- update(forward1, . ~ . + hs_grad)
+tidy(forward2)
+
+### Step 3: Enter the one with the lowest p-value in the rest 
+map(.x = variables_list, ~update(forward2, substitute(. ~ . + i, list(i = as.name(.x))))) %>% 
+  map_df(., tidy) %>% 
+  filter(term != "(Intercept)", term != "murder", term != 'hs_grad')
+
+# Enter the one with the lowest p-value: frost
+forward3 <- update(forward2, . ~ . + frost)
+tidy(forward3)
+
+### Step 4: Enter the one with the lowest p-value in the rest 
+map(.x = variables_list, ~update(forward3, substitute(. ~ . + i, list(i = as.name(.x))))) %>% 
+  map_df(., tidy) %>% 
+  filter(term != "(Intercept)", term != "murder", term != 'hs_grad', term != 'frost')
+
+# P-value of all new added variables are larger than 0.05, which means that they 
+# are not significant predictor, and we stop here.
+
+# The model we obtained is life_exp ~ murder + hs_grad + frost
+forward_fit = lm(life_exp ~ murder + hs_grad + frost, data = state_df)
+summary(forward_fit)
+```
+
+The model we obtained by forward elimination is life_exp ~ murder + hs_grad + frost.
+
+## Stepwise Regreession
+
+```{r}
+step(fit_all, direction = 'backward') %>% 
+  summary
+```
+
+The model we obtained by stepwise regression is life_exp ~ population + murder + hs_grad + frost.
+
+### Questions
+
+a) Do the procedures generate the same model?
+
+Forward elimination and backward elimination generated the same model: `life_exp ~ murder + hs_grad + frost`. However, stepwise regression generated a larger model with one more predictor, `population`.
+
+b) Is there any variable a close call? What was your decision: keep or discard? Provide
+arguments for your choice. (Note: this question might have more or less relevance depending
+on the ‘subset’ you choose).
+
+The variable `population` is a close call, with p-value = 0.052 $\sim 0.05$. I would keep it, because its p-value is quite close to 0.05. Also, adding 'population' contributes to the goodness of fit by increasing the adjusted R2 from 0.6939 to 0.7126. 
+ 
+c) Is there any association between ‘Illiteracy’ and ‘HS graduation rate’? Does your ‘subset’
+contain both?
+
+The Pearson correlation coefficient between ‘Illiteracy’ and ‘HS graduation rate’ is -0.66, indicating a moderate association. My subset only contains one of them. ‘Illiteracy’ is not included.
+
+
+
+```{r}
+skimr::skim(state_df)
+```
+
+
+
 
