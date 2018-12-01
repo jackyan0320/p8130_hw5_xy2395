@@ -12,6 +12,7 @@ library(faraway)
 library(patchwork)
 library(funModeling)
 library(broom)
+library(leaps)
 ```
 
 # Dataset Description
@@ -38,7 +39,7 @@ state_df =
 # state_df %>% skimr::skim()
 ```
 
-# Problem 1: Exploratory Data Analysis
+# Part 1: Exploratory Data Analysis
 
 ## Descriptive Statistics
 
@@ -107,7 +108,7 @@ plot_num()
 ```
 
 
-# Problem 2: Model Building Using Automatic Procedures
+# Part 2: Model Building Using Automatic Procedures
 
 Fit a model using all the predictors.
 
@@ -205,19 +206,62 @@ b) Is there any variable a close call? What was your decision: keep or discard? 
 arguments for your choice. (Note: this question might have more or less relevance depending
 on the ‘subset’ you choose).
 
-The variable `population` is a close call, with p-value = 0.052 $\sim 0.05$. I would keep it, because its p-value is quite close to 0.05. Also, adding 'population' contributes to the goodness of fit by increasing the adjusted R2 from 0.6939 to 0.7126. 
+The variable `population` is a close call, with p-value = 0.052 $\sim 0.05$. I would keep it, because its p-value is quite close to 0.05. This model has a better AIC than a smaller model. Also, adding 'population' contributes to the goodness of fit by increasing the adjusted R2 from 0.6939 to 0.7126. 
  
 c) Is there any association between ‘Illiteracy’ and ‘HS graduation rate’? Does your ‘subset’
 contain both?
 
 The Pearson correlation coefficient between ‘Illiteracy’ and ‘HS graduation rate’ is -0.66, indicating a moderate association. My subset only contains one of them. ‘Illiteracy’ is not included.
 
-
+# Part 3: Criterion-based Procedures
 
 ```{r}
-skimr::skim(state_df)
+
+# Leaps function provides all-subsets analysis
+
+# Printing the 2 best models of each size, using the Cp criterion:
+leaps(x = state_df %>% select(-life_exp), y = state_df[[1]], nbest = 1, method = "Cp")
+
+# Printing the 2 best models of each size, using the adjusted R^2 criterion:
+leaps(x = state_df %>% select(-life_exp), y = state_df[[1]], nbest = 1, method = "adjr2")
+
+# Summary of models for each size (one model per size)
+b = regsubsets(life_exp ~ ., data = state_df)
+rs <- summary(b) 
+
+# Plots of Cp and Adj-R2 as functions of parameters
+plot_cp = 
+  tibble(x = 1:7, y = rs$cp) %>% 
+  ggplot(aes(x = x, y = y)) +
+    geom_point() +
+    labs(x = "# predictors", y = "Cp")
+plot_adjr2 = 
+  tibble(x = 1:7, y = rs$adjr2) %>% 
+  ggplot(aes(x = x, y = y)) +
+    geom_point() +
+    labs(x = "# predictors", y = "Adjusted R2")
+
+plot_cp + plot_adjr2
+rs
 ```
 
+Based on the Cp and adjusted R2 criterion, I would choose the 4-predictor model. The best 4-predictor model is life_exp ~ population + murder + hs_grad + frost. It has the highest adjusted R2 and the lowest Cp value.
+
+# Part 4: Diagnostics
+
+The models chosen from Part 2 and 3 are the same: life_exp ~ population + murder + hs_grad + frost, so we will use this one as our final model.
+
+```{r}
+final_fit = lm(life_exp ~ population + murder + hs_grad + frost, data = state_df)
+par(mfrow=c(2,2))
+plot(final_fit)
+```
+
+a) Identify any leverage and/or influential points and take appropriate measures.
+
+
+
+b) Check the model assumptions.
 
 
 
