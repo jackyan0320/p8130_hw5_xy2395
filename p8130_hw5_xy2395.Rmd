@@ -2,10 +2,11 @@
 title: "p8130_hw5_xy2395"
 author: "Jack Yan"
 date: "11/30/2018"
-output: github_document
+output: pdf_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup, message = F}
+
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(faraway) 
@@ -15,6 +16,7 @@ library(broom)
 library(leaps)
 library(modelr)
 library(ggridges)
+set.seed(1)
 ```
 
 # Dataset Description
@@ -37,18 +39,13 @@ state_df =
   as.tibble() %>% 
   janitor::clean_names() %>% 
   select(life_exp, everything())
-  
-# state_df %>% skimr::skim()
 ```
 
 # Part 1: Exploratory Data Analysis
 
 ## Descriptive Statistics
-
-Descriptive Statistics for all the variables are shown below. All the variables are continuous.
-
+Build a function to generate descriptive statistics for continuous variables.
 ```{r}
-# Build a function to generate descriptive statistics for continuous variables
 summary_continuous = function(variable){
   data_frame(
     mean = mean(variable),
@@ -59,7 +56,11 @@ summary_continuous = function(variable){
     IQR = IQR(variable)
   )
 }
+```
 
+Descriptive Statistics for all the variables are shown below. All the variables are continuous.
+
+```{r}
 # Generate descriptive statistics
 map(state_df, summary_continuous) %>% 
   bind_rows() %>% 
@@ -72,8 +73,10 @@ map(state_df, summary_continuous) %>%
 Also show the correlation matrix to check potential correlations. `life_exp` and `murder` are highly correlated. `illiteracy` and `murder` are correlated as well.
 
 ```{r}
+# generate the correlation matrix
 cor(state_df) %>% 
-   knitr::kable(digits = 2)
+   knitr::kable(digits = 2,
+                caption = "Correlation matrix for all variables")
 ```
 
 ## Plots
@@ -85,16 +88,19 @@ plot(state_df)
 
 murder_illiteracy_points = 
 state_df %>% 
-  ggplot(aes(x = murder, y = illiteracy))+
+  ggplot(aes(x = murder, y = illiteracy)) +
     geom_point()
 murder_lifeexp_points = 
 state_df %>% 
-  ggplot(aes(x = murder, y = life_exp))+
+  ggplot(aes(x = murder, y = life_exp)) +
     geom_point()
 murder_illiteracy_points + murder_lifeexp_points
 ```
 
-Then check the normality of the outcome, `life_exp`. Life expectancies are approximately normally distributed among the states. 
+`life_exp` and `murder` are highly correlated. `illiteracy` and `murder` are correlated as well.
+
+
+Then check the normality of the outcome, `life_exp`. Life expectancies of the states are approximately normally distributed . 
 
 ```{r}
 state_df %>% 
@@ -112,79 +118,114 @@ plot_num()
 
 # Part 2: Model Building Using Automatic Procedures
 
-Fit a model using all the predictors.
+
+## Backward Elimination
+Fit a model using all the predictors. 
 
 ```{r}
 fit_all = lm(life_exp ~ ., data = state_df) 
-summary(fit_all)
+summary(fit_all) %>% 
+  tidy %>% 
+  arrange(p.value)
 ```
 
-## Backward Elimination
+Do the backward elimination. Based on the result above including all the predictors, `area` has the highest p-value 0.9649 > 0.05, and is thus eliminated in the first step.
 
 ```{r}
 # no area
 step1 = update(fit_all, . ~ . -area)
-summary(step1)
-
-# no illiteracy
-step2 = update(step1, . ~ . -illiteracy)
-summary(step2)
-
-# no income
-step3 = update(step2, . ~ . -income)
-summary(step3)
-
-# no pupulation
-step4 = update(step3, . ~ . -population)
-summary(step4)
+summary(step1) %>% 
+  tidy %>% 
+  arrange(p.value)
 ```
 
-The model we obtained by stepwise elimination is life_exp ~ murder + hs_grad + frost.
+Delete `illiteracy` with the highest p-value 0.9340 > 0.05.
+```{r}
+# no illiteracy
+step2 = update(step1, . ~ . -illiteracy)
+summary(step2) %>% 
+  tidy %>% 
+  arrange(p.value)
+```
+
+Delete `income` with the highest p-value 0.9153 > 0.05.
+```{r}
+# no income
+step3 = update(step2, . ~ . -income)
+summary(step3) %>% 
+  tidy %>% 
+  arrange(p.value)
+```
+
+Delete `population` with the highest p-value 0.05201 > 0.05.
+```{r}
+# no population
+step4 = update(step3, . ~ . -population)
+summary(step4) %>% glance
+summary(step4) %>% 
+  tidy %>% 
+  arrange(p.value)
+
+```
+
+Now each predictor remaining in the model has a p-value < 0.05, so we stop here. The model we obtained by stepwise elimination is life_exp ~ murder + hs_grad + frost.
 
 ## Forward Elimination
 
-```{r}
-### Step 1:  Fit simple linear regressions for all variables,look for the variable with lowest p-value
+Fit simple linear regressions for all variables and look for the variable with the lowest p-value. Shown below is a summary of each variable fitted in the simple linear regression as the only predictor.
+
+```{r, warning=F}
 variables_list = names(state_df) 
 
 map(variables_list, ~lm(substitute(life_exp ~ i, list(i = as.name(.x))), data = state_df)) %>% 
   map_df(., tidy) %>% 
-  filter(term != "(Intercept)")
-  
-# Enter first the one with the lowest p-value: murder
+  filter(term != "(Intercept)") %>% 
+  arrange(p.value)
+```
+
+So we first enter the one with the lowest p-value 2.26e-11 < 0.05: `murder`. 
+
+```{r, warning=F}
 forward1 = lm(life_exp ~ murder, data = state_df)
 tidy(forward1)
-
-### Step 2: Enter the one with the lowest p-value in the rest 
-
+```
+Add another one predictor to the simple linear regression model. Do this for all the rest predictors. Shown below is a summary of p-value for each variable added separately to the model as an additional predictor.
+```{r, warning=F}
 map(.x = variables_list, ~update(forward1, substitute(. ~ . + i, list(i = as.name(.x))))) %>% 
   map_df(., tidy) %>% 
-  filter(term != "(Intercept)", term != "murder")
-
-# Enter the one with the lowest p-value: hs_grad
+  filter(term != "(Intercept)", term != "murder") %>% 
+  arrange(p.value)
+```
+Enter the one with the lowest p-value 0.00909: `hs_grad`.
+```{r, warning=F}
 forward2 <- update(forward1, . ~ . + hs_grad)
 tidy(forward2)
-
-### Step 3: Enter the one with the lowest p-value in the rest 
+```
+Add another one predictor to the model. Do this for all the rest predictors. Shown below is a summary of p-value for each variable added separately to the model as an additional predictor.
+```{r, warning=F}
 map(.x = variables_list, ~update(forward2, substitute(. ~ . + i, list(i = as.name(.x))))) %>% 
   map_df(., tidy) %>% 
-  filter(term != "(Intercept)", term != "murder", term != 'hs_grad')
+  filter(term != "(Intercept)", term != "murder", term != 'hs_grad') %>% 
+  arrange(p.value)
+```
 
-# Enter the one with the lowest p-value: frost
+Enter the one with the lowest p-value 0.00699: `frost`.
+```{r, warning=F}
 forward3 <- update(forward2, . ~ . + frost)
 tidy(forward3)
-
-### Step 4: Enter the one with the lowest p-value in the rest 
+```
+Add another one predictor to the model. Do this for all the rest predictors. Shown below is a summary of p-value for each variable added separately to the model as an additional predictor.
+```{r, warning=F}
 map(.x = variables_list, ~update(forward3, substitute(. ~ . + i, list(i = as.name(.x))))) %>% 
   map_df(., tidy) %>% 
-  filter(term != "(Intercept)", term != "murder", term != 'hs_grad', term != 'frost')
-
-# P-value of all new added variables are larger than 0.05, which means that they 
-# are not significant predictor, and we stop here.
-
-# The model we obtained is life_exp ~ murder + hs_grad + frost
+  filter(term != "(Intercept)", term != "murder", term != 'hs_grad', term != 'frost') %>% 
+  arrange(p.value)
+```
+P-value of all new added variables are larger than 0.05, which means that they are not significant predictor, so we stop here.
+```{r, warning=F}
 forward_fit = lm(life_exp ~ murder + hs_grad + frost, data = state_df)
-summary(forward_fit)
+summary(forward_fit) %>% tidy()
+summary(forward_fit) %>% glance()
 ```
 
 The model we obtained by forward elimination is life_exp ~ murder + hs_grad + frost.
@@ -193,7 +234,7 @@ The model we obtained by forward elimination is life_exp ~ murder + hs_grad + fr
 
 ```{r}
 step(fit_all, direction = 'backward') %>% 
-  summary
+  summary()
 ```
 
 The model we obtained by stepwise regression is life_exp ~ population + murder + hs_grad + frost.
@@ -273,6 +314,7 @@ state_df_no_11 =
   filter(!index %in% c(11)) 
 
 final_fit_no_11 = lm(life_exp ~ population + murder + hs_grad + frost, data = state_df_no_11)
+par(mfrow=c(2,2))
 plot(final_fit_no_11)
 ```
 
@@ -287,23 +329,25 @@ Using the ‘final’ model chosen in part 4, focus on MSE to test the model pre
 a) Use a 10-fold cross-validation (10 repeats).
 
 ```{r}
+
 cv_df = 
   crossv_kfold(state_df, 10) %>% 
   mutate(model = map(train, ~lm(life_exp ~ population + murder + hs_grad + frost, data = .x))) %>% 
   mutate(mse = map2_dbl(model, test, ~mse(model = .x, data = .y))) 
-
+```
+Below shows the 10 mse's of the 10-fold cross-validation.
+```{r}
 cv_df$mse
 summary_continuous(cv_df$mse)
 cv_df %>% 
   ggplot(aes(x = mse, y = "model")) +
   geom_density_ridges()
 ```
-
+This is the summary of the 10-fold cross-validation. `summary_continuous` function was writen in Part 1.
 
 b) Bootstrapping
 
 ```{r}
-set.seed(1)
 fit_final = lm(life_exp ~ population + murder + hs_grad + frost, data = state_df)
 
 bootstrap_df = 
@@ -329,18 +373,25 @@ result_df_1000 =
 
 summary_continuous(result_df_10$value)
 summary_continuous(result_df_1000$value)
+```
+Here shows the discriptive statistics of the 10X and 1000X bootstrap. 
 
+```{r}
+plot_10x =
 result_df_10 %>% 
-  ggplot(aes(y="density", x = value)) +
-    geom_density_ridges()
-
+  ggplot(aes(y = "density", x = value)) +
+    geom_density_ridges() +
+    labs(title = "Distribution of MSE (10 times)")
+plot_1000x =
 result_df_1000 %>% 
   ggplot(aes(y="density", x = value)) +
-    geom_density_ridges()
+    geom_density_ridges() +
+    labs(title = "Distribution of MSE (1000 times)")
 
-
+plot_10x + plot_1000x
 ```
 
+The plots show the distribution of MSEs from the 10-time and 1000-time bootstrapping.
 
 c) Summary
 
