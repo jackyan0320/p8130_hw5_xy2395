@@ -2,7 +2,7 @@
 title: "p8130_hw5_xy2395"
 author: "Jack Yan"
 date: "11/30/2018"
-output: pdf_document
+output: github_document
 ---
 
 ```{r setup, message = F}
